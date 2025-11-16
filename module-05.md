@@ -1,4 +1,3 @@
-```markdown
 # Module 5: Neural Networks – The Core Architecture  
 ## From Layers to Full Brain (Zero Math, All Code & Visuals)
 

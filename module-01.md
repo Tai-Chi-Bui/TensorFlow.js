@@ -1,4 +1,3 @@
-```markdown
 # Module 1: What is Machine Learning? Why TensorFlow.js?  
 ## A Complete Beginner's Guide (JavaScript Developers Only)
 
@@ -335,6 +334,3 @@ You now understand **what ML is**, **why TensorFlow.js rocks**, and even **wrote
 > See you in **Module 2** — where the **real magic** begins! 🚀
 
 ---
-```
-**Save this entire content as `MODULE-1.md`** — it's ready to use, print, or share with your newbie learner.  
-100% beginner-friendly, packed with analogies, code, and zero math. Perfect start!

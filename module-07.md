@@ -1,4 +1,3 @@
-```markdown
 # Module 7: Advanced Architectures – CNNs & RNNs  
 ## From Images to Sequences (Real-World AI, No Math, All Code)
 

@@ -1,4 +1,3 @@
-```markdown
 # Module 6: Data Handling & Preprocessing  
 ## From Messy CSV to Clean Tensors (Real-World ML Pipelines)
 

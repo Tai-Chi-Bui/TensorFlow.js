@@ -1,4 +1,3 @@
-```markdown
 # Module 2: Your First Real TensorFlow.js Model  
 ## From Fake Rules to Real Learning (Beginner-Friendly, Step-by-Step)
 
@@ -393,8 +392,3 @@ No Python. No math. Just **code**.
 > Next: **Module 3** — Tensors, data, and real-world datasets!
 
 ---
-``` 
-
-**Save the entire content above as `MODULE-2.md`**  
-Ready to teach, run, and impress — 100% beginner-friendly, fully interactive, and deeply explained.  
-Let the learning continue!

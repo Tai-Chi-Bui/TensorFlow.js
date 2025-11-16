@@ -1,4 +1,3 @@
-```markdown
 # Module 9: Deployment, Optimization & Node.js  
 ## From Browser to Production (Ship Your ML App!)
 
@@ -324,8 +323,3 @@ You **train**, **optimize**, **deploy**, and **serve** AI.
 > Next: **Module 10** — Capstone & Portfolio!
 
 ---
-```
-
-**Save the entire content above as `MODULE-9.md`**  
-Production-ready: quantization, API, Vercel deploy, Web Workers, monitoring.  
-Your learner now **ships ML apps to the world**.

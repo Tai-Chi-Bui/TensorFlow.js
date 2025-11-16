@@ -63,238 +63,387 @@ graph LR
 
 ## 5.3 Full Working MNIST Classifier
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Module 5: MNIST Digit Classifier</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body { font-family: Arial; padding: 20px; max-width: 1000px; margin: auto; }
-    .container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
-    canvas { image-rendering: pixelated; border: 1px solid #ccc; }
-    button { padding: 10px 15px; font-size: 16px; margin: 5px; }
-    .vis-container { height: 300px; }
-    .code { background: #f8f8f8; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; }
-  </style>
-</head>
-<body>
+```jsx
+// MNISTClassifier.jsx
+import React, { useState, useRef, useEffect } from 'react';
+import * as tf from '@tensorflow/tfjs';
+import * as tfvis from '@tensorflow/tfjs-vis';
 
-  <h1>Handwritten Digit Classifier (0–9)</h1>
-  <p>Train a 3-layer neural network on <strong>MNIST</strong> dataset.</p>
+export default function MNISTClassifier() {
+  const [model, setModel] = useState(null);
+  const [trainData, setTrainData] = useState(null);
+  const [testData, setTestData] = useState(null);
+  const [status, setStatus] = useState('Ready');
+  const [prediction, setPrediction] = useState('');
+  const [drawing, setDrawing] = useState(false);
+  const canvasRef = useRef(null);
+  const lossVisRef = useRef(null);
+  const modelVisRef = useRef(null);
+  const modelRef = useRef(null); // Use ref for immediate access
+  const trainDataRef = useRef(null);
+  const testDataRef = useRef(null);
 
-  <div class="container">
-    <div class="card">
-      <h3>Training Controls</h3>
-      <button onclick="loadAndTrain()">Load Data & Train (20 epochs)</button>
-      <button onclick="predictRandom()">Predict Random Test Digit</button>
-      <div id="status">Ready</div>
-      <div class="vis-container" id="lossVis"></div>
-    </div>
+  // Load MNIST (simplified: 1000 train, 200 test)
+  const loadMNIST = async () => {
+    const [trainCsv, testCsv] = await Promise.all([
+      fetch('https://storage.googleapis.com/learnjs-data/mnist-demo/mnist_train_1000.csv').then(r => r.text()),
+      fetch('https://storage.googleapis.com/learnjs-data/mnist-demo/mnist_test_200.csv').then(r => r.text())
+    ]);
 
-    <div class="card">
-      <h3>Live Prediction</h3>
-      <canvas id="digitCanvas" width="280" height="280"></canvas>
-      <button onclick="clearCanvas()">Clear</button>
-      <div id="prediction"></div>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top: 20px;">
-    <h3>Network Visualization</h3>
-    <div class="vis-container" id="modelVis"></div>
-  </div>
-
-  <script>
-    let model, trainData, testData;
-
-    // Load MNIST (simplified: 1000 train, 200 test)
-    async function loadMNIST() {
-      const [trainCsv, testCsv] = await Promise.all([
-        fetch('https://storage.googleapis.com/learnjs-data/mnist-demo/mnist_train_1000.csv').then(r => r.text()),
-        fetch('https://storage.googleapis.com/learnjs-data/mnist-demo/mnist_test_200.csv').then(r => r.text())
-      ]);
-
-      const parse = (csv) => {
-        const lines = csv.split('\n').slice(1);
-        const labels = [];
-        const images = [];
-        lines.forEach(line => {
-          const vals = line.split(',').map(Number);
-          labels.push(vals[0]);
-          images.push(vals.slice(1));
-        });
-        return { images: tf.tensor2d(images), labels: tf.oneHot(tf.tensor1d(labels, 'int32'), 10) };
-      };
-
-      trainData = parse(trainCsv);
-      testData = parse(testCsv);
-
-      // Normalize
-      const norm = (img) => img.div(255);
-      trainData.images = norm(trainData.images);
-      testData.images = norm(testData.images);
-    }
-
-    // Build 3-layer model
-    function createModel() {
-      model = tf.sequential();
-      model.add(tf.layers.dense({
-        units: 128,
-        activation: 'relu',
-        inputShape: [784]
-      }));
-      model.add(tf.layers.dropout({ rate: 0.2 }));
-      model.add(tf.layers.dense({
-        units: 128,
-        activation: 'relu'
-      }));
-      model.add(tf.layers.dense({
-        units: 10,
-        activation: 'softmax'
-      }));
-
-      model.compile({
-        optimizer: 'adam',
-        loss: 'categoricalCrossentropy',
-        metrics: ['accuracy']
+    const parse = (csv) => {
+      const lines = csv.split('\n').slice(1);
+      const labels = [];
+      const images = [];
+      lines.forEach(line => {
+        const vals = line.split(',').map(Number);
+        labels.push(vals[0]);
+        images.push(vals.slice(1));
       });
+      return { images: tf.tensor2d(images), labels: tf.oneHot(tf.tensor1d(labels, 'int32'), 10) };
+    };
 
-      model.summary();
+    const train = parse(trainCsv);
+    const test = parse(testCsv);
+
+    // Normalize
+    const norm = (img) => img.div(255);
+    train.images = norm(train.images);
+    test.images = norm(test.images);
+
+    // Cleanup old data
+    if (trainDataRef.current) {
+      trainDataRef.current.images.dispose();
+      trainDataRef.current.labels.dispose();
+    }
+    if (testDataRef.current) {
+      testDataRef.current.images.dispose();
+      testDataRef.current.labels.dispose();
     }
 
-    // Train
-    async function loadAndTrain() {
-      document.getElementById('status').innerHTML = 'Loading data...';
+    trainDataRef.current = train;
+    testDataRef.current = test;
+    setTrainData(train);
+    setTestData(test);
+  };
+
+  // Build 3-layer model
+  const createModel = () => {
+    // Cleanup old model
+    if (modelRef.current) {
+      modelRef.current.dispose();
+    }
+    
+    const newModel = tf.sequential();
+    newModel.add(tf.layers.dense({
+      units: 128,
+      activation: 'relu',
+      inputShape: [784]
+    }));
+    newModel.add(tf.layers.dropout({ rate: 0.2 }));
+    newModel.add(tf.layers.dense({
+      units: 128,
+      activation: 'relu'
+    }));
+    newModel.add(tf.layers.dense({
+      units: 10,
+      activation: 'softmax'
+    }));
+
+    newModel.compile({
+      optimizer: 'adam',
+      loss: 'categoricalCrossentropy',
+      metrics: ['accuracy']
+    });
+
+    newModel.summary();
+    modelRef.current = newModel; // Store in ref immediately
+    setModel(newModel);
+    return newModel;
+  };
+
+  // Train
+  const loadAndTrain = async () => {
+    try {
+      setStatus('Loading data...');
       await loadMNIST();
 
-      createModel();
-      document.getElementById('status').innerHTML = 'Training...';
+      // Get or create model
+      let currentModel = modelRef.current;
+      if (!currentModel) {
+        currentModel = createModel();
+      }
 
+      const currentTrainData = trainDataRef.current;
+      const currentTestData = testDataRef.current;
+      
+      if (!currentTrainData || !currentTestData) {
+        setStatus('Error: Data not loaded');
+        return;
+      }
+
+      setStatus('Training...');
+      
       const surface = { name: 'Training Loss & Accuracy', tab: 'Training' };
-      await model.fit(trainData.images, trainData.labels, {
+      await currentModel.fit(currentTrainData.images, currentTrainData.labels, {
         epochs: 20,
         batchSize: 32,
-        validationData: [testData.images, testData.labels],
+        validationData: [currentTestData.images, currentTestData.labels],
         callbacks: tfvis.show.fitCallbacks(surface, ['loss', 'val_loss', 'acc', 'val_acc'])
       });
 
-      document.getElementById('status').innerHTML = 
-        '<span style="color:green">Training Complete! Try prediction.</span>';
-
+      setStatus('Training Complete! Try prediction.');
       visualizeModel();
+    } catch (error) {
+      setStatus(`Error: ${error.message}`);
+    }
+  };
+
+  // Predict random test digit
+  const predictRandom = async () => {
+    const currentModel = modelRef.current;
+    const currentTestData = testDataRef.current;
+    
+    if (!currentModel || !currentTestData) {
+      alert("Train first!");
+      return;
     }
 
-    // Predict random test digit
-    async function predictRandom() {
-      if (!model || !testData) return alert("Train first!");
+    const idx = Math.floor(Math.random() * 200);
+    const img = currentTestData.images.slice([idx, 0], [1, 784]);
+    const labelTensor = currentTestData.labels.slice([idx, 0], [1, 10]);
+    const label = labelTensor.argMax(-1).dataSync()[0];
 
-      const idx = Math.floor(Math.random() * 200);
-      const img = testData.images.slice([idx, 0], [1, 784]);
-      const label = testData.labels.slice([idx, 0], [1, 10]).argMax(-1).dataSync()[0];
-
-      drawImage(img.reshape([28, 28]));
-      const pred = model.predict(img).dataSync();
+    drawImage(img.reshape([28, 28]));
+    
+    tf.tidy(() => {
+      const pred = currentModel.predict(img).dataSync();
       const predicted = pred.indexOf(Math.max(...pred));
 
-      document.getElementById('prediction').innerHTML = `
-        <strong>True: ${label} | Predicted: ${predicted}</strong><br>
-        Confidence: ${(pred[predicted] * 100).toFixed(1)}%
-      `;
+      setPrediction(
+        `True: ${label} | Predicted: ${predicted}\n` +
+        `Confidence: ${(pred[predicted] * 100).toFixed(1)}%`
+      );
+    });
+
+    // Cleanup
+    img.dispose();
+    labelTensor.dispose();
+  };
+
+  // Draw image from tensor
+  const drawImage = (tensor) => {
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.clearRect(0, 0, 280, 280);
+    ctx.save();
+    ctx.scale(10, 10);
+
+    const data = tensor.dataSync();
+    const img = ctx.createImageData(28, 28);
+    for (let i = 0; i < data.length; i++) {
+      const val = Math.floor(data[i] * 255);
+      const idx = i * 4;
+      img.data[idx] = val;
+      img.data[idx+1] = val;
+      img.data[idx+2] = val;
+      img.data[idx+3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    ctx.restore();
+  };
+
+  // Visualize model structure
+  const visualizeModel = () => {
+    if (!model) return;
+    const surface = { name: 'Model Summary', tab: 'Model' };
+    tfvis.show.modelSummary(surface, model);
+  };
+
+  // Canvas drawing handlers
+  const getEventPos = (e) => {
+    if (!canvasRef.current) return { x: 0, y: 0 };
+    const rect = canvasRef.current.getBoundingClientRect();
+    return {
+      x: (e.clientX || (e.touches && e.touches[0].clientX) || 0) - rect.left,
+      y: (e.clientY || (e.touches && e.touches[0].clientY) || 0) - rect.top
+    };
+  };
+
+  const handleDraw = (e) => {
+    if (!drawing || !canvasRef.current) return;
+    const { x, y } = getEventPos(e);
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.fillStyle = 'black';
+    ctx.fillRect(x - 15, y - 15, 30, 30);
+  };
+
+  const clearCanvas = () => {
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.clearRect(0, 0, 280, 280);
+    setPrediction('');
+  };
+
+  // Predict user drawing
+  const predictDrawing = async () => {
+    const currentModel = modelRef.current;
+    if (!currentModel || !canvasRef.current) {
+      alert("Train model first!");
+      return;
     }
 
-    // Draw image from tensor
-    function drawImage(tensor) {
-      const canvas = document.getElementById('digitCanvas');
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, 280, 280);
-      ctx.scale(10, 10);
+    const smallCanvas = document.createElement('canvas');
+    smallCanvas.width = 28;
+    smallCanvas.height = 28;
+    const sctx = smallCanvas.getContext('2d');
+    sctx.drawImage(canvasRef.current, 0, 0, 28, 28);
+    const imgData = sctx.getImageData(0, 0, 28, 28).data;
 
-      const data = tensor.dataSync();
-      const img = ctx.createImageData(28, 28);
-      for (let i = 0; i < data.length; i++) {
-        const val = Math.floor(data[i] * 255);
-        const idx = i * 4;
-        img.data[idx] = val;
-        img.data[idx+1] = val;
-        img.data[idx+2] = val;
-        img.data[idx+3] = 255;
-      }
-      ctx.putImageData(img, 0, 0);
+    const input = [];
+    for (let i = 0; i < imgData.length; i += 4) {
+      input.push(1 - imgData[i] / 255); // invert + normalize
     }
 
-    // Visualize model structure
-    function visualizeModel() {
-      const surface = { name: 'Model Summary', tab: 'Model' };
-      tfvis.show.modelSummary(surface, model);
-    }
-
-    // Canvas drawing for user input
-    const canvas = document.getElementById('digitCanvas');
-    const ctx = canvas.getContext('2d');
-    let drawing = false;
-
-    canvas.addEventListener('mousedown', () => drawing = true);
-    canvas.addEventListener('mouseup', () => drawing = false);
-    canvas.addEventListener('mousemove', draw);
-    canvas.addEventListener('touchstart', (e) => { drawing = true; draw(e.touches[0]); });
-    canvas.addEventListener('touchend', () => drawing = false);
-    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e.touches[0]); });
-
-    function draw(e) {
-      if (!drawing) return;
-      const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX || e.pageX) - rect.left;
-      const y = (e.clientY || e.pageY) - rect.top;
-      ctx.fillStyle = 'black';
-      ctx.fillRect(x - 15, y - 15, 30, 30);
-    }
-
-    function clearCanvas() {
-      ctx.clearRect(0, 0, 280, 280);
-      document.getElementById('prediction').innerHTML = '';
-    }
-
-    // Bonus: Predict user drawing
-    window.predictDrawing = async function() {
-      if (!model) return alert("Train model first!");
-
-      const smallCanvas = document.createElement('canvas');
-      smallCanvas.width = 28;
-      smallCanvas.height = 28;
-      const sctx = smallCanvas.getContext('2d');
-      sctx.drawImage(canvas, 0, 0, 28, 28);
-      const imgData = sctx.getImageData(0, 0, 28, 28).data;
-
-      const input = [];
-      for (let i = 0; i < imgData.length; i += 4) {
-        input.push(1 - imgData[i] / 255); // invert + normalize
-      }
-
+    tf.tidy(() => {
       const tensor = tf.tensor2d([input]);
-      const pred = model.predict(tensor).dataSync();
+      const pred = currentModel.predict(tensor).dataSync();
       const digit = pred.indexOf(Math.max(...pred));
 
-      document.getElementById('prediction').innerHTML = `
-        <strong>I think you drew: ${digit}</strong><br>
-        Confidence: ${(pred[digit] * 100).toFixed(1)}%
-      `;
+      setPrediction(
+        `I think you drew: ${digit}\n` +
+        `Confidence: ${(pred[digit] * 100).toFixed(1)}%`
+      );
+    });
+  };
+
+  // Canvas event handlers
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleMouseDown = () => setDrawing(true);
+    const handleMouseUp = () => setDrawing(false);
+    const handleMouseMove = (e) => handleDraw(e);
+    const handleTouchStart = (e) => {
+      e.preventDefault();
+      setDrawing(true);
+      handleDraw(e);
     };
-  </script>
+    const handleTouchEnd = () => setDrawing(false);
+    const handleTouchMove = (e) => {
+      e.preventDefault();
+      handleDraw(e);
+    };
 
-  <div class="card" style="margin-top: 20px;">
-    <h3>Draw Your Own Digit!</h3>
-    <button onclick="predictDrawing()">Predict My Drawing</button>
-  </div>
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('touchstart', handleTouchStart);
+    canvas.addEventListener('touchend', handleTouchEnd);
+    canvas.addEventListener('touchmove', handleTouchMove);
 
-</body>
-</html>
+    return () => {
+      canvas.removeEventListener('mousedown', handleMouseDown);
+      canvas.removeEventListener('mouseup', handleMouseUp);
+      canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchend', handleTouchEnd);
+      canvas.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, [drawing]);
+
+  useEffect(() => {
+    return () => {
+      if (modelRef.current) {
+        modelRef.current.dispose();
+        modelRef.current = null;
+      }
+      if (trainDataRef.current) {
+        trainDataRef.current.images.dispose();
+        trainDataRef.current.labels.dispose();
+        trainDataRef.current = null;
+      }
+      if (testDataRef.current) {
+        testDataRef.current.images.dispose();
+        testDataRef.current.labels.dispose();
+        testDataRef.current = null;
+      }
+    };
+  }, []);
+
+  const cardStyle = {
+    border: '1px solid #ddd',
+    padding: '15px',
+    borderRadius: '8px'
+  };
+
+  return (
+    <div style={{ fontFamily: 'Arial', padding: '20px', maxWidth: '1000px', margin: 'auto' }}>
+      <h1>Handwritten Digit Classifier (0–9)</h1>
+      <p>Train a 3-layer neural network on <strong>MNIST</strong> dataset.</p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        <div style={cardStyle}>
+          <h3>Training Controls</h3>
+          <button 
+            onClick={loadAndTrain}
+            style={{ padding: '10px 15px', fontSize: '16px', margin: '5px' }}
+          >
+            Load Data & Train (20 epochs)
+          </button>
+          <button 
+            onClick={predictRandom}
+            style={{ padding: '10px 15px', fontSize: '16px', margin: '5px' }}
+          >
+            Predict Random Test Digit
+          </button>
+          <div>{status}</div>
+          <div ref={lossVisRef} style={{ height: '300px' }} />
+        </div>
+
+        <div style={cardStyle}>
+          <h3>Live Prediction</h3>
+          <canvas 
+            ref={canvasRef}
+            width={280}
+            height={280}
+            style={{ imageRendering: 'pixelated', border: '1px solid #ccc' }}
+          />
+          <button 
+            onClick={clearCanvas}
+            style={{ padding: '10px 15px', fontSize: '16px', margin: '5px' }}
+          >
+            Clear
+          </button>
+          <div style={{ whiteSpace: 'pre-line' }}>{prediction}</div>
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle, marginTop: '20px' }}>
+        <h3>Draw Your Own Digit!</h3>
+        <button 
+          onClick={predictDrawing}
+          style={{ padding: '10px 15px', fontSize: '16px', margin: '5px' }}
+        >
+          Predict My Drawing
+        </button>
+      </div>
+
+      <div style={{ ...cardStyle, marginTop: '20px' }}>
+        <h3>Network Visualization</h3>
+        <div ref={modelVisRef} style={{ height: '300px' }} />
+      </div>
+    </div>
+  );
+}
 ```
 
-### Save as `module5-mnist-classifier.html` → Open in Chrome
+### Save as `MNISTClassifier.jsx` in your React project
+
+**Install dependencies:**
+```bash
+npm install @tensorflow/tfjs @tensorflow/tfjs-vis
+```
 
 ---
 
@@ -412,13 +561,5 @@ const loaded = await tf.loadLayersModel('file://./mnist-model/model.json');
 | MNIST Data | [learnjs-data/mnist-demo](https://storage.googleapis.com/learnjs-data/mnist-demo/) |
 | TF.js Vis | [tfjs-vis.github.io](https://github.com/tensorflow/tfjs-vis) |
 | Video | [YouTube: Neural Nets in 15 min](https://www.youtube.com/watch?v=aircAruvnKk) |
-
----
-
-**You just built a brain!**  
-From input pixels to output digits — **all in JavaScript**.
-
-> **Save as `MODULE-5.md`**  
-> Next: **Module 6** — Real-world data pipelines!
 
 ---

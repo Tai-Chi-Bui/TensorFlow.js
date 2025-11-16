@@ -74,80 +74,130 @@ const model = await tf.loadLayersModel('./tfjs_model/model.json');
 
 ## 9.4 Full Working: **Deployable Web App**
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>ML App - Production Ready</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <style>
-    body { font-family: Arial; padding: 20px; text-align: center; }
-    #preview { max-width: 300px; margin: 20px auto; border-radius: 12px; }
-    button { padding: 12px 24px; font-size: 18px; margin: 10px; }
-    #result { font-size: 24px; margin: 20px; }
-  </style>
-</head>
-<body>
+```jsx
+// PetClassifierProduction.jsx
+import React, { useState, useRef, useEffect } from 'react';
+import * as tf from '@tensorflow/tfjs';
 
-  <h1>Pet Classifier (Production)</h1>
-  <input type="file" id="upload" accept="image/*" />
-  <img id="preview" />
-  <button onclick="predict()">Predict</button>
-  <div id="result"></div>
-  <div id="status"></div>
+export default function PetClassifierProduction() {
+  const [model, setModel] = useState(null);
+  const [status, setStatus] = useState('Loading model...');
+  const [result, setResult] = useState('');
+  const [preview, setPreview] = useState('');
+  const fileInputRef = useRef(null);
+  const workerRef = useRef(null);
+  const modelRef = useRef(null); // Use ref for immediate access
 
-  <script>
-    let model;
-    let worker;
+  // Load model (cached)
+  const loadModel = async () => {
+    if (modelRef.current) return;
+    try {
+      const loadedModel = await tf.loadLayersModel('https://your-domain.com/models/pet-model/model.json');
+      modelRef.current = loadedModel; // Store in ref immediately
+      setModel(loadedModel);
+      setStatus('Ready!');
+    } catch (err) {
+      setStatus('Error loading model: ' + err.message);
+    }
+  };
 
-    // Load model (cached)
-    async function loadModel() {
-      if (model) return;
-      document.getElementById('status').innerHTML = 'Loading model...';
-      model = await tf.loadLayersModel('https://your-domain.com/models/pet-model/model.json');
-      document.getElementById('status').innerHTML = '<span style="color:green">Ready!</span>';
+  // Predict with Web Worker
+  const handlePredict = () => {
+    const file = fileInputRef.current?.files[0];
+    const currentModel = modelRef.current;
+    if (!file || !currentModel) {
+      if (!currentModel) {
+        alert("Model not loaded!");
+      }
+      return;
     }
 
-    // Predict with Web Worker
-    function predict() {
-      const file = document.getElementById('upload').files[0];
-      if (!file || !model) return;
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => {
+      setPreview(img.src);
 
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      img.onload = () => {
-        document.getElementById('preview').src = img.src;
+      // Offload to worker
+      if (!workerRef.current) {
+        workerRef.current = new Worker('/worker.js');
+        workerRef.current.onmessage = (e) => {
+          const { label, confidence } = e.data;
+          setResult(`${label} (${(confidence*100).toFixed(1)}%)`);
+        };
+        workerRef.current.onerror = (error) => {
+          setResult(`Worker error: ${error.message}`);
+        };
+      }
 
-        // Offload to worker
-        if (!worker) {
-          worker = new Worker('worker.js');
-          worker.onmessage = (e) => {
-            const { label, confidence } = e.data;
-            document.getElementById('result').innerHTML = `
-              <strong>${label}</strong> (${(confidence*100).toFixed(1)}%)
-            `;
-          };
-        }
-
-        tf.tidy(() => {
-          const tensor = tf.browser.fromPixels(img)
-            .resizeNearestNeighbor([64, 64])
-            .toFloat()
-            .div(255)
-            .expandDims();
-          worker.postMessage({ tensor: tensor.dataSync(), shape: tensor.shape });
+      tf.tidy(() => {
+        const tensor = tf.browser.fromPixels(img)
+          .resizeNearestNeighbor([64, 64])
+          .toFloat()
+          .div(255)
+          .expandDims();
+        workerRef.current.postMessage({ 
+          tensor: tensor.dataSync(), 
+          shape: tensor.shape 
         });
-      };
+      });
+    };
+    img.onerror = () => {
+      setResult('Error loading image');
+    };
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setPreview(URL.createObjectURL(file));
     }
+  };
 
+  useEffect(() => {
     loadModel();
-  </script>
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+      if (modelRef.current) {
+        modelRef.current.dispose();
+        modelRef.current = null;
+      }
+    };
+  }, []);
 
-</body>
-</html>
+  return (
+    <div style={{ fontFamily: 'Arial', padding: '20px', textAlign: 'center' }}>
+      <h1>Pet Classifier (Production)</h1>
+      <input 
+        ref={fileInputRef}
+        type="file" 
+        accept="image/*"
+        onChange={handleFileChange}
+        style={{ margin: '10px' }}
+      />
+      {preview && (
+        <img 
+          src={preview} 
+          alt="Preview"
+          style={{ maxWidth: '300px', margin: '20px auto', borderRadius: '12px', display: 'block' }}
+        />
+      )}
+      <button 
+        onClick={handlePredict}
+        style={{ padding: '12px 24px', fontSize: '18px', margin: '10px' }}
+      >
+        Predict
+      </button>
+      <div style={{ fontSize: '24px', margin: '20px' }}>{result}</div>
+      <div>{status}</div>
+    </div>
+  );
+}
 ```
 
-### `worker.js`
+### `worker.js` (separate file in public folder)
 
 ```js
 let model;
@@ -169,6 +219,10 @@ self.onmessage = async (e) => {
   input.dispose();
 };
 ```
+
+### Save as `PetClassifierProduction.jsx` in your React project
+
+**Note**: Place `worker.js` in your `public` folder for Create React App, or configure it appropriately for your build system.
 
 ---
 
@@ -313,13 +367,5 @@ const result = await model.classify([userInput]);
 | Quantization | [tfjs-automl](https://github.com/tensorflow/tfjs/tree/master/tfjs-automl) |
 | Vercel Deploy | [vercel.com/docs](https://vercel.com/docs) |
 | Video | [YouTube: Deploy TF.js in 10 min](https://www.youtube.com/watch?v=0oW4JLP7l8c) |
-
----
-
-**You’re a full-stack ML engineer!**  
-You **train**, **optimize**, **deploy**, and **serve** AI.
-
-> **Save as `MODULE-9.md`**  
-> Next: **Module 10** — Capstone & Portfolio!
 
 ---

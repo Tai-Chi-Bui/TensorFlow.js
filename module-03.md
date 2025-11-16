@@ -153,44 +153,39 @@ const result = tf.tidy(() => {
 
 ## 3.7 Real-World: Image as Tensor (MNIST Digit)
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Module 3: Image as Tensor</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <style>
-    canvas { border: 2px solid #333; image-rendering: pixelated; }
-    .container { text-align: center; font-family: Arial; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h2>28×28 MNIST Digit → Tensor</h2>
-    <canvas id="canvas" width="280" height="280"></canvas>
-    <button onclick="loadDigit()">Load Random Digit</button>
-    <pre id="tensorOutput"></pre>
-  </div>
+```jsx
+// ImageTensor.jsx
+import React, { useRef, useEffect, useState } from 'react';
+import * as tf from '@tensorflow/tfjs';
 
-  <script>
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    ctx.scale(10, 10); // 28px → 280px
+export default function ImageTensor() {
+  const canvasRef = useRef(null);
+  const [tensorOutput, setTensorOutput] = useState('');
 
-    async function loadDigit() {
-      // Load MNIST test data (first 1000)
-      const data = await fetch('https://storage.googleapis.com/learnjs-data/mnist-demo/mnist_test.csv').then(r => r.text());
-      const lines = data.split('\n').slice(1, 1001);
-      const randomLine = lines[Math.floor(Math.random() * lines.length)];
-      const values = randomLine.split(',').map(Number);
+  useEffect(() => {
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      ctx.scale(10, 10); // 28px → 280px
+    }
+  }, []);
 
-      const label = values[0];
-      const pixels = values.slice(1); // 784 values (28x28)
+  const loadDigit = async () => {
+    // Load MNIST test data (first 1000)
+    const data = await fetch('https://storage.googleapis.com/learnjs-data/mnist-demo/mnist_test.csv')
+      .then(r => r.text());
+    const lines = data.split('\n').slice(1, 1001);
+    const randomLine = lines[Math.floor(Math.random() * lines.length)];
+    const values = randomLine.split(',').map(Number);
 
-      // Create 28x28 tensor
-      const imageTensor = tf.tensor(pixels, [28, 28]);
+    const label = values[0];
+    const pixels = values.slice(1); // 784 values (28x28)
 
-      // Draw on canvas
+    // Create 28x28 tensor
+    const imageTensor = tf.tensor(pixels, [28, 28]);
+
+    // Draw on canvas
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
       ctx.clearRect(0, 0, 28, 28);
       const imgData = ctx.createImageData(28, 28);
       for (let i = 0; i < pixels.length; i++) {
@@ -202,75 +197,118 @@ const result = tf.tidy(() => {
         imgData.data[idx+3] = 255;
       }
       ctx.putImageData(imgData, 0, 0);
-
-      // Show tensor
-      document.getElementById('tensorOutput').textContent = 
-        `Label: ${label}\nShape: [${imageTensor.shape.join(', ')}]\nFirst 5x5:\n` +
-        imageTensor.slice([0,0], [5,5]).arraySync().map(row => row.map(v => v.toFixed(0).padStart(3)).join(' ')).join('\n');
-
-      imageTensor.dispose();
     }
-  </script>
-</body>
-</html>
+
+    // Show tensor
+    const slice = imageTensor.slice([0,0], [5,5]);
+    const output = 
+      `Label: ${label}\nShape: [${imageTensor.shape.join(', ')}]\nFirst 5x5:\n` +
+      slice.arraySync()
+        .map(row => row.map(v => v.toFixed(0).padStart(3)).join(' '))
+        .join('\n');
+    
+    setTensorOutput(output);
+    slice.dispose();
+    imageTensor.dispose();
+  };
+
+  return (
+    <div style={{ textAlign: 'center', fontFamily: 'Arial' }}>
+      <h2>28×28 MNIST Digit → Tensor</h2>
+      <canvas 
+        ref={canvasRef}
+        width={280}
+        height={280}
+        style={{ border: '2px solid #333', imageRendering: 'pixelated' }}
+      />
+      <br />
+      <button 
+        onClick={loadDigit}
+        style={{ padding: '10px', margin: '10px' }}
+      >
+        Load Random Digit
+      </button>
+      <pre style={{ textAlign: 'left', margin: '20px auto', maxWidth: '400px' }}>
+        {tensorOutput}
+      </pre>
+    </div>
+  );
+}
 ```
 
-### Save as `module3-image-tensor.html` → Click "Load Random Digit"
+### Save as `ImageTensor.jsx` in your React project
 
 ---
 
 ## 3.8 Interactive Tensor Playground
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Tensor Playground</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <style>
-    body { font-family: monospace; padding: 20px; }
-    textarea, pre { width: 100%; font-family: monospace; }
-    button { padding: 10px; margin: 5px; }
-  </style>
-</head>
-<body>
-  <h2>Live Tensor Editor</h2>
-  <textarea id="code" rows="10" placeholder="Enter tensor code...">
-const a = tf.tensor2d([[1, 2], [3, 4]]);
+```jsx
+// TensorPlayground.jsx
+import React, { useState } from 'react';
+import * as tf from '@tensorflow/tfjs';
+
+export default function TensorPlayground() {
+  const [code, setCode] = useState(
+    `const a = tf.tensor2d([[1, 2], [3, 4]]);
 const b = tf.tensor2d([[5, 6], [7, 8]]);
-tf.add(a, b).print();
-  </textarea><br>
-  <button onclick="run()">Run Code</button>
-  <pre id="output"></pre>
+tf.add(a, b).print();`
+  );
+  const [output, setOutput] = useState('');
 
-  <script>
-    function run() {
-      const code = document.getElementById('code').value;
-      const output = document.getElementById('output');
-      output.textContent = 'Running...\n';
+  const run = () => {
+    setOutput('Running...\n');
+    let outputText = '';
 
-      tf.tidy(() => {
-        try {
-          const result = eval(code);
-          if (result && result.print) {
-            const log = console.log;
-            console.log = (msg) => { output.textContent += msg + '\n'; };
-            result.print();
-            console.log = log;
-          } else {
-            output.textContent += 'Result: ' + JSON.stringify(result) + '\n';
-          }
-        } catch (e) {
-          output.textContent += 'Error: ' + e.message + '\n';
+    tf.tidy(() => {
+      try {
+        // Capture console.log for tensor.print()
+        const originalLog = console.log;
+        console.log = (msg) => {
+          outputText += msg + '\n';
+        };
+
+        const result = eval(code);
+        
+        if (result && typeof result.print === 'function') {
+          result.print();
+        } else {
+          outputText += 'Result: ' + JSON.stringify(result) + '\n';
         }
-      });
-    }
-  </script>
-</body>
-</html>
+
+        console.log = originalLog;
+        setOutput(outputText || 'No output');
+      } catch (e) {
+        setOutput('Error: ' + e.message + '\n');
+      }
+    });
+  };
+
+  return (
+    <div style={{ fontFamily: 'monospace', padding: '20px' }}>
+      <h2>Live Tensor Editor</h2>
+      <textarea
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        rows={10}
+        placeholder="Enter tensor code..."
+        style={{ width: '100%', fontFamily: 'monospace', padding: '10px' }}
+      />
+      <br />
+      <button 
+        onClick={run}
+        style={{ padding: '10px', margin: '5px' }}
+      >
+        Run Code
+      </button>
+      <pre style={{ width: '100%', fontFamily: 'monospace', background: '#f4f4f4', padding: '10px', overflow: 'auto' }}>
+        {output}
+      </pre>
+    </div>
+  );
+}
 ```
 
-### Save as `module3-playground.html`
+### Save as `TensorPlayground.jsx` in your React project
 
 ---
 
@@ -348,10 +386,3 @@ node node-tensor.js
 
 ---
 
-**You now control the data!**  
-Tensors are no longer magic — they’re **your tools**.
-
-> **Save as `MODULE-3.md`**  
-> Next: **Module 4** — Build real models with real data!
-
----

@@ -60,9 +60,9 @@ Predict **Iris flower species** from 4 measurements.
 
 ### Load Data in Browser (No Server!)
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-<script>
+```jsx
+import * as tf from '@tensorflow/tfjs';
+
 // Load from public CSV
 const CSV_URL = 'https://storage.googleapis.com/learnjs-data/iris/iris.csv';
 
@@ -75,7 +75,6 @@ async function loadIrisData() {
   console.log("First 3 rows:", data.slice(0, 3));
   return data;
 }
-</script>
 ```
 
 > **Try it**: Open DevTools → paste → see real data!
@@ -84,213 +83,222 @@ async function loadIrisData() {
 
 ## 4.3 Full Working Model: Iris Classifier
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Module 4: Iris Flower Classifier</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body { font-family: Arial; padding: 20px; max-width: 900px; margin: auto; }
-    .container { display: flex; gap: 20px; flex-wrap: wrap; }
-    .card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; flex: 1; min-width: 300px; }
-    button, input { padding: 10px; font-size: 16px; margin: 5px; }
-    .code { background: #f8f8f8; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 14px; }
-    canvas { margin-top: 10px; }
-  </style>
-</head>
-<body>
+```jsx
+// IrisClassifier.jsx
+import React, { useState, useRef, useEffect } from 'react';
+import * as tf from '@tensorflow/tfjs';
+import { Chart, registerables } from 'chart.js';
 
-  <h1>🌸 Iris Flower Classifier</h1>
-  <p><strong>Predict species</strong> from 4 measurements.</p>
+Chart.register(...registerables);
 
-  <div class="container">
-    <div class="card">
-      <h3>Train Model</h3>
-      <button onclick="train()">Start Training (100 epochs)</button>
-      <div id="status">Ready</div>
-      <canvas id="lossChart" height="150"></canvas>
-    </div>
+export default function IrisClassifier() {
+  const [model, setModel] = useState(null);
+  const [status, setStatus] = useState('Ready');
+  const [result, setResult] = useState('');
+  const [lossHistory, setLossHistory] = useState([]);
+  const [confusionData, setConfusionData] = useState([]);
+  const [inputs, setInputs] = useState({ sl: '', sw: '', pl: '', pw: '' });
+  const lossChartRef = useRef(null);
+  const confusionChartRef = useRef(null);
+  const lossChartInstanceRef = useRef(null);
+  const confusionChartInstanceRef = useRef(null);
+  const modelRef = useRef(null); // Use ref for immediate access
+  const dataRef = useRef(null); // Store data for cleanup
 
-    <div class="card">
-      <h3>Predict New Flower</h3>
-      <input type="number" id="sl" placeholder="Sepal Length (e.g. 5.1)" /><br>
-      <input type="number" id="sw" placeholder="Sepal Width (e.g. 3.5)" /><br>
-      <input type="number" id="pl" placeholder="Petal Length (e.g. 1.4)" /><br>
-      <input type="number" id="pw" placeholder="Petal Width (e.g. 0.2)" /><br>
-      <button onclick="predict()">Predict Species</button>
-      <div id="result"></div>
-    </div>
-  </div>
+  const speciesNames = ['setosa', 'versicolor', 'virginica'];
 
-  <div class="card" style="margin-top: 20px;">
-    <h3>Confusion Matrix</h3>
-    <canvas id="confusionChart"></canvas>
-  </div>
+  // Load and preprocess data
+  const loadAndPrepareData = async () => {
+    const rawData = await tf.data.csv(
+      'https://storage.googleapis.com/learnjs-data/iris/iris.csv',
+      { columnConfigs: { species: { isLabel: true } } }
+    ).toArray();
 
-  <script>
-    let model;
-    let speciesNames = ['setosa', 'versicolor', 'virginica'];
-    let lossHistory = [];
-    let confusionData = [];
+    tf.util.shuffle(rawData);
 
-    // Load and preprocess data
-    async function loadAndPrepareData() {
-      const rawData = await tf.data.csv(
-        'https://storage.googleapis.com/learnjs-data/iris/iris.csv',
-        { columnConfigs: { species: { isLabel: true } } }
-      ).toArray();
+    const features = rawData.map(r => [
+      r.sepalLength, r.sepalWidth, r.petalLength, r.petalWidth
+    ]);
+    const labels = rawData.map(r => speciesNames.indexOf(r.species));
 
-      // Shuffle
-      tf.util.shuffle(rawData);
+    const xs = tf.tensor2d(features);
+    const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), 3);
 
-      const features = rawData.map(r => [
-        r.sepalLength, r.sepalWidth, r.petalLength, r.petalWidth
-      ]);
-      const labels = rawData.map(r => speciesNames.indexOf(r.species));
+    const xsMin = xs.min(0);
+    const xsMax = xs.max(0);
+    const xsNorm = xs.sub(xsMin).div(xsMax.sub(xsMin));
 
-      const xs = tf.tensor2d(features);
-      const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), 3);
-
-      // Normalize features (0 to 1)
-      const xsMin = xs.min(0);
-      const xsMax = xs.max(0);
-      const xsNorm = xs.sub(xsMin).div(xsMax.sub(xsMin));
-
-      // Split: 120 train, 30 test
-      const split = 120;
-      return {
-        trainXs: xsNorm.slice([0, 0], [split, 4]),
-        trainYs: ys.slice([0, 0], [split, 3]),
-        testXs: xsNorm.slice([split, 0], [30, 4]),
-        testYs: ys.slice([split, 0], [30, 3]),
-        xsMin, xsMax
-      };
+    const split = 120;
+    const data = {
+      trainXs: xsNorm.slice([0, 0], [split, 4]),
+      trainYs: ys.slice([0, 0], [split, 3]),
+      testXs: xsNorm.slice([split, 0], [30, 4]),
+      testYs: ys.slice([split, 0], [30, 3]),
+      xsMin, xsMax
+    };
+    
+    // Cleanup old data
+    if (dataRef.current) {
+      if (dataRef.current.trainXs) dataRef.current.trainXs.dispose();
+      if (dataRef.current.trainYs) dataRef.current.trainYs.dispose();
+      if (dataRef.current.testXs) dataRef.current.testXs.dispose();
+      if (dataRef.current.testYs) dataRef.current.testYs.dispose();
+      if (dataRef.current.xsMin) dataRef.current.xsMin.dispose();
+      if (dataRef.current.xsMax) dataRef.current.xsMax.dispose();
     }
+    
+    dataRef.current = data;
+    return data;
+  };
 
-    // Build model
-    function createModel() {
-      model = tf.sequential();
-      model.add(tf.layers.dense({
-        units: 16,
-        activation: 'relu',
-        inputShape: [4]
-      }));
-      model.add(tf.layers.dense({
-        units: 3,
-        activation: 'softmax'
-      }));
-
-      model.compile({
-        optimizer: 'adam',
-        loss: 'categoricalCrossentropy',
-        metrics: ['accuracy']
-      });
+  // Build model
+  const createModel = () => {
+    // Cleanup old model
+    if (modelRef.current) {
+      modelRef.current.dispose();
     }
+    
+    const newModel = tf.sequential();
+    newModel.add(tf.layers.dense({
+      units: 16,
+      activation: 'relu',
+      inputShape: [4]
+    }));
+    newModel.add(tf.layers.dense({
+      units: 3,
+      activation: 'softmax'
+    }));
 
-    // Train
-    async function train() {
-      document.getElementById('status').innerHTML = 'Loading data...';
+    newModel.compile({
+      optimizer: 'adam',
+      loss: 'categoricalCrossentropy',
+      metrics: ['accuracy']
+    });
+
+    modelRef.current = newModel; // Store in ref immediately
+    setModel(newModel);
+    return newModel;
+  };
+
+  // Train
+  const train = async () => {
+    try {
+      setStatus('Loading data...');
       const data = await loadAndPrepareData();
 
-      createModel();
-      document.getElementById('status').innerHTML = 'Training...';
+      // Get or create model
+      let currentModel = modelRef.current;
+      if (!currentModel) {
+        currentModel = createModel();
+      }
+      
+      setStatus('Training...');
+      const newLossHistory = [];
 
-      lossHistory = [];
-      confusionData = [];
-
-      await model.fit(data.trainXs, data.trainYs, {
+      await currentModel.fit(data.trainXs, data.trainYs, {
         epochs: 100,
         validationData: [data.testXs, data.testYs],
         callbacks: {
           onEpochEnd: (epoch, logs) => {
-            lossHistory.push({
+            newLossHistory.push({
               epoch: epoch + 1,
               loss: logs.val_loss,
               acc: logs.val_acc
             });
-            document.getElementById('status').innerHTML = 
-              `Epoch ${epoch + 1}/100<br>
-               Val Loss: ${logs.val_loss.toFixed(4)} | 
-               Val Acc: ${(logs.val_acc * 100).toFixed(1)}%`;
-            updateCharts();
+            setStatus(
+              `Epoch ${epoch + 1}/100\n` +
+              `Val Loss: ${logs.val_loss.toFixed(4)} | ` +
+              `Val Acc: ${(logs.val_acc * 100).toFixed(1)}%`
+            );
+            setLossHistory([...newLossHistory]);
+            updateCharts([...newLossHistory], []);
           }
         }
       });
 
-      // Evaluate test set
-      const evalResult = model.evaluate(data.testXs, data.testYs);
+      const evalResult = currentModel.evaluate(data.testXs, data.testYs);
       const accuracy = evalResult[1].dataSync()[0];
-      document.getElementById('status').innerHTML = 
-        `<span style="color:green">Training Done! Test Accuracy: ${(accuracy*100).toFixed(1)}%</span>`;
+      setStatus(`Training Done! Test Accuracy: ${(accuracy*100).toFixed(1)}%`);
 
-      // Generate confusion matrix
-      const preds = model.predict(data.testXs).argMax(-1);
+      // Cleanup eval tensors
+      evalResult[0].dispose();
+      evalResult[1].dispose();
+
+      const preds = currentModel.predict(data.testXs).argMax(-1);
       const truths = data.testYs.argMax(-1);
       const predArray = await preds.array();
       const truthArray = await truths.array();
 
-      confusionData = Array(3).fill().map(() => Array(3).fill(0));
+      // Cleanup prediction tensors
+      preds.dispose();
+      truths.dispose();
+
+      const newConfusionData = Array(3).fill().map(() => Array(3).fill(0));
       for (let i = 0; i < 30; i++) {
-        confusionData[truthArray[i]][predArray[i]]++;
+        newConfusionData[truthArray[i]][predArray[i]]++;
       }
 
-      updateCharts();
+      setConfusionData(newConfusionData);
+      updateCharts(newLossHistory, newConfusionData);
+    } catch (error) {
+      setStatus(`Error: ${error.message}`);
+    }
+  };
+
+  // Predict
+  const handlePredict = () => {
+    const currentModel = modelRef.current;
+    if (!currentModel) {
+      setResult('Train the model first!');
+      return;
     }
 
-    // Predict
-    function predict() {
-      if (!model) {
-        alert("Train the model first!");
-        return;
-      }
+    const { sl, sw, pl, pw } = inputs;
+    const values = [parseFloat(sl), parseFloat(sw), parseFloat(pl), parseFloat(pw)];
 
-      const sl = parseFloat(document.getElementById('sl').value);
-      const sw = parseFloat(document.getElementById('sw').value);
-      const pl = parseFloat(document.getElementById('pl').value);
-      const pw = parseFloat(document.getElementById('pw').value);
+    if (values.some(isNaN)) {
+      setResult('Fill all fields!');
+      return;
+    }
 
-      if ([sl, sw, pl, pw].some(isNaN)) {
-        alert("Fill all fields!");
-        return;
-      }
-
-      // Normalize input
-      const input = tf.tensor2d([[sl, sw, pl, pw]]);
+    tf.tidy(() => {
+      const input = tf.tensor2d([values]);
       const normalized = input.sub([4.3, 2.0, 1.0, 0.1]).div([3.6, 2.4, 6.8, 2.4]);
-      const prediction = model.predict(normalized);
+      const prediction = currentModel.predict(normalized);
       const probs = prediction.dataSync();
       const species = speciesNames[probs.indexOf(Math.max(...probs))];
 
-      document.getElementById('result').innerHTML = `
-        <strong>Prediction: <span style="color:#d4a017">${species.toUpperCase()}</span></strong><br>
-        <small>
-          Setosa: ${(probs[0]*100).toFixed(1)}% | 
-          Versicolor: ${(probs[1]*100).toFixed(1)}% | 
-          Virginica: ${(probs[2]*100).toFixed(1)}%
-        </small>
-      `;
-    }
+      setResult(
+        `Prediction: ${species.toUpperCase()}\n` +
+        `Setosa: ${(probs[0]*100).toFixed(1)}% | ` +
+        `Versicolor: ${(probs[1]*100).toFixed(1)}% | ` +
+        `Virginica: ${(probs[2]*100).toFixed(1)}%`
+      );
+    });
+  };
 
-    // Charts
-    function updateCharts() {
-      // Loss & Accuracy
-      const ctx1 = document.getElementById('lossChart').getContext('2d');
-      new Chart(ctx1, {
+  // Charts
+  const updateCharts = (lossData = lossHistory, confData = confusionData) => {
+    if (lossChartRef.current) {
+      if (lossChartInstanceRef.current) {
+        lossChartInstanceRef.current.destroy();
+      }
+
+      const ctx = lossChartRef.current.getContext('2d');
+      lossChartInstanceRef.current = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: lossHistory.map(l => l.epoch),
+          labels: lossData.map(l => l.epoch),
           datasets: [
             {
               label: 'Validation Loss',
-              data: lossHistory.map(l => l.loss),
+              data: lossData.map(l => l.loss),
               borderColor: 'rgb(255, 99, 132)',
               fill: false
             },
             {
               label: 'Validation Accuracy',
-              data: lossHistory.map(l => l.acc * 100),
+              data: lossData.map(l => l.acc * 100),
               borderColor: 'rgb(75, 192, 192)',
               yAxisID: 'y2',
               fill: false
@@ -305,43 +313,141 @@ async function loadIrisData() {
           }
         }
       });
-
-      // Confusion Matrix
-      if (confusionData.length > 0) {
-        const ctx2 = document.getElementById('confusionChart').getContext('2d');
-        new Chart(ctx2, {
-          type: 'matrix',
-          data: {
-            datasets: [{
-              label: 'Confusion Matrix',
-              data: confusionData.flatMap((row, i) =>
-                row.map((val, j) => ({ x: speciesNames[j], y: speciesNames[i], v: val }))
-              ),
-              backgroundColor: (ctx) => {
-                const value = ctx.dataset.data[ctx.dataIndex].v;
-                const alpha = value / 10;
-                return `rgba(54, 162, 235, ${alpha})`;
-              },
-              width: ({chart}) => (chart.chartArea.width / 3) * 0.8,
-              height: ({chart}) => (chart.chartArea.height / 3) * 0.8
-            }]
-          },
-          options: {
-            scales: {
-              x: { title: { display: true, text: 'Predicted' } },
-              y: { title: { display: true, text: 'Actual' } }
-            }
-          }
-        });
-      }
     }
-  </script>
 
-</body>
-</html>
+    if (confusionChartRef.current && confData.length > 0) {
+      if (confusionChartInstanceRef.current) {
+        confusionChartInstanceRef.current.destroy();
+      }
+
+      const ctx = confusionChartRef.current.getContext('2d');
+      confusionChartInstanceRef.current = new Chart(ctx, {
+        type: 'matrix',
+        data: {
+          datasets: [{
+            label: 'Confusion Matrix',
+            data: confData.flatMap((row, i) =>
+              row.map((val, j) => ({ x: speciesNames[j], y: speciesNames[i], v: val }))
+            ),
+            backgroundColor: (ctx) => {
+              const value = ctx.dataset.data[ctx.dataIndex].v;
+              const alpha = value / 10;
+              return `rgba(54, 162, 235, ${alpha})`;
+            },
+            width: ({chart}) => (chart.chartArea.width / 3) * 0.8,
+            height: ({chart}) => (chart.chartArea.height / 3) * 0.8
+          }]
+        },
+        options: {
+          scales: {
+            x: { title: { display: true, text: 'Predicted' } },
+            y: { title: { display: true, text: 'Actual' } }
+          }
+        }
+      });
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (lossChartInstanceRef.current) lossChartInstanceRef.current.destroy();
+      if (confusionChartInstanceRef.current) confusionChartInstanceRef.current.destroy();
+      if (modelRef.current) {
+        modelRef.current.dispose();
+        modelRef.current = null;
+      }
+      if (dataRef.current) {
+        if (dataRef.current.trainXs) dataRef.current.trainXs.dispose();
+        if (dataRef.current.trainYs) dataRef.current.trainYs.dispose();
+        if (dataRef.current.testXs) dataRef.current.testXs.dispose();
+        if (dataRef.current.testYs) dataRef.current.testYs.dispose();
+        if (dataRef.current.xsMin) dataRef.current.xsMin.dispose();
+        if (dataRef.current.xsMax) dataRef.current.xsMax.dispose();
+      }
+    };
+  }, []);
+
+  const cardStyle = {
+    border: '1px solid #ddd',
+    padding: '15px',
+    borderRadius: '8px',
+    flex: 1,
+    minWidth: '300px'
+  };
+
+  return (
+    <div style={{ fontFamily: 'Arial', padding: '20px', maxWidth: '900px', margin: 'auto' }}>
+      <h1>🌸 Iris Flower Classifier</h1>
+      <p><strong>Predict species</strong> from 4 measurements.</p>
+
+      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+        <div style={cardStyle}>
+          <h3>Train Model</h3>
+          <button 
+            onClick={train}
+            style={{ padding: '10px', fontSize: '16px', margin: '5px' }}
+          >
+            Start Training (100 epochs)
+          </button>
+          <div style={{ whiteSpace: 'pre-line' }}>{status}</div>
+          <canvas ref={lossChartRef} height={150} style={{ marginTop: '10px' }} />
+        </div>
+
+        <div style={cardStyle}>
+          <h3>Predict New Flower</h3>
+          <input
+            type="number"
+            value={inputs.sl}
+            onChange={(e) => setInputs({...inputs, sl: e.target.value})}
+            placeholder="Sepal Length (e.g. 5.1)"
+            style={{ padding: '10px', fontSize: '16px', margin: '5px', width: 'calc(100% - 20px)' }}
+          />
+          <input
+            type="number"
+            value={inputs.sw}
+            onChange={(e) => setInputs({...inputs, sw: e.target.value})}
+            placeholder="Sepal Width (e.g. 3.5)"
+            style={{ padding: '10px', fontSize: '16px', margin: '5px', width: 'calc(100% - 20px)' }}
+          />
+          <input
+            type="number"
+            value={inputs.pl}
+            onChange={(e) => setInputs({...inputs, pl: e.target.value})}
+            placeholder="Petal Length (e.g. 1.4)"
+            style={{ padding: '10px', fontSize: '16px', margin: '5px', width: 'calc(100% - 20px)' }}
+          />
+          <input
+            type="number"
+            value={inputs.pw}
+            onChange={(e) => setInputs({...inputs, pw: e.target.value})}
+            placeholder="Petal Width (e.g. 0.2)"
+            style={{ padding: '10px', fontSize: '16px', margin: '5px', width: 'calc(100% - 20px)' }}
+          />
+          <button 
+            onClick={handlePredict}
+            style={{ padding: '10px', fontSize: '16px', margin: '5px' }}
+          >
+            Predict Species
+          </button>
+          <div style={{ whiteSpace: 'pre-line', marginTop: '10px' }}>{result}</div>
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle, marginTop: '20px' }}>
+        <h3>Confusion Matrix</h3>
+        <canvas ref={confusionChartRef} />
+      </div>
+    </div>
+  );
+}
 ```
 
-### Save as `module4-iris-classifier.html` → Open in Chrome
+### Save as `IrisClassifier.jsx` in your React project
+
+**Install dependencies:**
+```bash
+npm install @tensorflow/tfjs chart.js
+```
 
 ---
 
@@ -461,13 +567,5 @@ app.post('/predict', (req, res) => {
 | Dataset | [Iris CSV](https://storage.googleapis.com/learnjs-data/iris/iris.csv) |
 | Guide | [TF.js Models](https://www.tensorflow.org/js/guide/models_and_layers) |
 | Video | [Iris in 10 min](https://www.youtube.com/watch?v=c8zMVPW9vzg) |
-
----
-
-**You’re a real ML developer now!**  
-You trained, evaluated, saved, and served a model.
-
-> **Save as `MODULE-4.md`**  
-> Next: **Module 5** — Neural network architecture deep dive!
 
 ---

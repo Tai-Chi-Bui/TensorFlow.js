@@ -91,98 +91,80 @@ const imageDataset = tf.data.generator(async function* () {
 
 ## 6.4 Full Cats vs Dogs Classifier (Real Images!)
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Module 6: Cats vs Dogs Classifier</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@latest"></script>
-  <style>
-    body { font-family: Arial; padding: 20px; max-width: 1000px; margin: auto; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
-    img { width: 100%; max-width: 150px; border-radius: 8px; }
-    button { padding: 10px 15px; font-size: 16px; margin: 5px; }
-    .vis { height: 300px; }
-  </style>
-</head>
-<body>
+```jsx
+// CatsDogsClassifier.jsx
+import React, { useState, useRef, useEffect } from 'react';
+import * as tf from '@tensorflow/tfjs';
+import * as tfvis from '@tensorflow/tfjs-vis';
 
-  <h1>Cats vs Dogs Image Classifier</h1>
-  <p>Train on **real photos** using `tf.data` pipeline.</p>
+export default function CatsDogsClassifier() {
+  const [model, setModel] = useState(null);
+  const [status, setStatus] = useState('Ready');
+  const [result, setResult] = useState('');
+  const [preview, setPreview] = useState('');
+  const fileInputRef = useRef(null);
+  const modelRef = useRef(null); // Use ref for immediate access
 
-  <div class="grid">
-    <div class="card">
-      <h3>Training</h3>
-      <button onclick="train()">Train Model (10 epochs)</button>
-      <div id="status">Ready</div>
-      <div class="vis" id="lossVis"></div>
-    </div>
+  // Sample image URLs (public domain)
+  const catUrls = Array(50).fill().map((_, i) => 
+    `https://storage.googleapis.com/learnjs-data/cats-dogs/cats/cat_${i}.jpg`
+  );
+  const dogUrls = Array(50).fill().map((_, i) => 
+    `https://storage.googleapis.com/learnjs-data/cats-dogs/dogs/dog_${i}.jpg`
+  );
 
-    <div class="card">
-      <h3>Upload & Predict</h3>
-      <input type="file" id="imageUpload" accept="image/*" />
-      <img id="preview" />
-      <button onclick="predict()">Predict</button>
-      <div id="result"></div>
-    </div>
-  </div>
+  // Create dataset
+  async function* imageGenerator() {
+    const urls = [...catUrls.map(u => [u, 0]), ...dogUrls.map(u => [u, 1])];
+    tf.util.shuffle(urls);
 
-  <script>
-    let model;
-    let dataset;
-
-    // Sample image URLs (public domain)
-    const catUrls = Array(50).fill().map((_, i) => 
-      `https://storage.googleapis.com/learnjs-data/cats-dogs/cats/cat_${i}.jpg`
-    );
-    const dogUrls = Array(50).fill().map((_, i) => 
-      `https://storage.googleapis.com/learnjs-data/cats-dogs/dogs/dog_${i}.jpg`
-    );
-
-    // Create dataset
-    async function* imageGenerator() {
-      const urls = [...catUrls.map(u => [u, 0]), ...dogUrls.map(u => [u, 1])];
-      tf.util.shuffle(urls);
-
-      for (const [url, label] of urls) {
-        try {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.src = url;
-          await img.decode();
-          const tensor = tf.browser.fromPixels(img)
-            .resizeNearestNeighbor([64, 64])
-            .toFloat()
-            .div(255)
-            .expandDims(0);
-          yield { xs: tensor, ys: tf.oneHot([label], 2) };
-        } catch (e) {
-          console.warn('Failed to load:', url);
-        }
+    for (const [url, label] of urls) {
+      try {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = url;
+        await img.decode();
+        const tensor = tf.browser.fromPixels(img)
+          .resizeNearestNeighbor([64, 64])
+          .toFloat()
+          .div(255)
+          .expandDims(0);
+        yield { xs: tensor, ys: tf.oneHot([label], 2) };
+      } catch (e) {
+        console.warn('Failed to load:', url);
       }
     }
+  }
 
-    // Build model
-    function createModel() {
-      model = tf.sequential();
-      model.add(tf.layers.flatten({ inputShape: [64, 64, 3] }));
-      model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
-      model.add(tf.layers.dropout({ rate: 0.3 }));
-      model.add(tf.layers.dense({ units: 2, activation: 'softmax' }));
-
-      model.compile({
-        optimizer: 'adam',
-        loss: 'categoricalCrossentropy',
-        metrics: ['accuracy']
-      });
+  // Build model
+  const createModel = () => {
+    // Cleanup old model
+    if (modelRef.current) {
+      modelRef.current.dispose();
     }
+    
+    const newModel = tf.sequential();
+    newModel.add(tf.layers.flatten({ inputShape: [64, 64, 3] }));
+    newModel.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+    newModel.add(tf.layers.dropout({ rate: 0.3 }));
+    newModel.add(tf.layers.dense({ units: 2, activation: 'softmax' }));
 
-    // Train
-    async function train() {
-      document.getElementById('status').innerHTML = 'Preparing data...';
-      dataset = tf.data.generator(imageGenerator);
+    newModel.compile({
+      optimizer: 'adam',
+      loss: 'categoricalCrossentropy',
+      metrics: ['accuracy']
+    });
+
+    modelRef.current = newModel; // Store in ref immediately
+    setModel(newModel);
+    return newModel;
+  };
+
+  // Train
+  const train = async () => {
+    try {
+      setStatus('Preparing data...');
+      const dataset = tf.data.generator(imageGenerator);
 
       const trainDataset = dataset
         .map(({ xs, ys }) => ({
@@ -192,10 +174,15 @@ const imageDataset = tf.data.generator(async function* () {
         .shuffle(100)
         .batch(16);
 
-      createModel();
-      document.getElementById('status').innerHTML = 'Training...';
+      // Get or create model
+      let currentModel = modelRef.current;
+      if (!currentModel) {
+        currentModel = createModel();
+      }
 
-      await model.fitDataset(trainDataset, {
+      setStatus('Training...');
+
+      await currentModel.fitDataset(trainDataset, {
         epochs: 10,
         callbacks: tfvis.show.fitCallbacks(
           { name: 'Training', tab: 'Model' },
@@ -203,54 +190,124 @@ const imageDataset = tf.data.generator(async function* () {
         )
       });
 
-      document.getElementById('status').innerHTML = 
-        '<span style="color:green">Training Complete!</span>';
+      setStatus('Training Complete!');
+    } catch (error) {
+      setStatus(`Error: ${error.message}`);
+    }
+  };
+
+  // Predict uploaded image
+  const handlePredict = async () => {
+    const currentModel = modelRef.current;
+    if (!currentModel) {
+      alert("Train first!");
+      return;
     }
 
-    // Predict uploaded image
-    async function predict() {
-      if (!model) return alert("Train first!");
+    const file = fileInputRef.current?.files[0];
+    if (!file) {
+      alert("Upload an image!");
+      return;
+    }
 
-      const file = document.getElementById('imageUpload').files[0];
-      if (!file) return alert("Upload an image!");
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    await img.decode();
 
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      await img.decode();
+    setPreview(img.src);
 
-      document.getElementById('preview').src = img.src;
-
+    tf.tidy(() => {
       const tensor = tf.browser.fromPixels(img)
         .resizeNearestNeighbor([64, 64])
         .toFloat()
         .div(255)
         .expandDims(0);
 
-      const pred = model.predict(tensor).dataSync();
+      const pred = currentModel.predict(tensor).dataSync();
       const label = pred[0] > pred[1] ? 'Cat' : 'Dog';
-      const confidence = Math.max(...pred) * 100;
+      const confidence = Math.max(...pred);
 
-      document.getElementById('result').innerHTML = `
-        <strong>${label}</strong> (${confidence.toFixed(1)}% confidence)
-      `;
-
-      tensor.dispose();
-    }
-
-    // Preview on upload
-    document.getElementById('imageUpload').addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        document.getElementById('preview').src = URL.createObjectURL(file);
-      }
+      setResult(`${label} (${(confidence*100).toFixed(1)}% confidence)`);
     });
-  </script>
+  };
 
-</body>
-</html>
+  // Preview on upload
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setPreview(URL.createObjectURL(file));
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (modelRef.current) {
+        modelRef.current.dispose();
+        modelRef.current = null;
+      }
+    };
+  }, []);
+
+  const cardStyle = {
+    border: '1px solid #ddd',
+    padding: '15px',
+    borderRadius: '8px'
+  };
+
+  return (
+    <div style={{ fontFamily: 'Arial', padding: '20px', maxWidth: '1000px', margin: 'auto' }}>
+      <h1>Cats vs Dogs Image Classifier</h1>
+      <p>Train on <strong>real photos</strong> using `tf.data` pipeline.</p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        <div style={cardStyle}>
+          <h3>Training</h3>
+          <button 
+            onClick={train}
+            style={{ padding: '10px 15px', fontSize: '16px', margin: '5px' }}
+          >
+            Train Model (10 epochs)
+          </button>
+          <div>{status}</div>
+          <div style={{ height: '300px' }} />
+        </div>
+
+        <div style={cardStyle}>
+          <h3>Upload & Predict</h3>
+          <input 
+            ref={fileInputRef}
+            type="file" 
+            accept="image/*"
+            onChange={handleFileChange}
+            style={{ margin: '5px' }}
+          />
+          {preview && (
+            <img 
+              src={preview} 
+              alt="Preview"
+              style={{ width: '100%', maxWidth: '150px', borderRadius: '8px', margin: '10px 0' }}
+            />
+          )}
+          <button 
+            onClick={handlePredict}
+            style={{ padding: '10px 15px', fontSize: '16px', margin: '5px' }}
+          >
+            Predict
+          </button>
+          <div>{result}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 ```
 
-### Save as `module6-cats-dogs.html` → Open in Chrome
+### Save as `CatsDogsClassifier.jsx` in your React project
+
+**Install dependencies:**
+```bash
+npm install @tensorflow/tfjs @tensorflow/tfjs-vis
+```
 
 > **Data Source**: Public domain images from [Kaggle Cats vs Dogs](https://www.kaggle.com/c/dogs-vs-cats)
 
@@ -382,10 +439,3 @@ console.log('Data ready:', xs.shape, ys.shape);
 
 ---
 
-**You’re a data engineer now!**  
-From CSV to images — you **control the pipeline**.
-
-> **Save as `MODULE-6.md`**  
-> Next: **Module 7** — CNNs, RNNs, and advanced architectures!
-
----

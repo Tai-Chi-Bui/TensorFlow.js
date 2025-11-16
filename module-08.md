@@ -40,9 +40,9 @@
 
 ## 8.2 Load from TensorFlow Hub
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
+```jsx
+import * as tf from '@tensorflow/tfjs';
+import * as mobilenet from '@tensorflow-models/mobilenet';
 ```
 
 ```js
@@ -56,118 +56,206 @@ const mobilenet = await tf.loadGraphModel(
 
 ## 8.3 Full Working: **MobileNet Image Classifier**
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Module 8: MobileNet Image Classifier</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
-  <style>
-    body { font-family: Arial; padding: 20px; max-width: 900px; margin: auto; }
-    .card { border: 1px solid #ddd; padding: 20px; border-radius: 12px; margin: 20px 0; }
-    img { max-width: 100%; border-radius: 8px; }
-    button { padding: 12px 20px; font-size: 16px; margin: 5px; }
-    .result { margin-top: 15px; font-size: 18px; }
-    .top3 { background: #f0f8ff; padding: 10px; border-radius: 8px; }
-  </style>
-</head>
-<body>
+```jsx
+// MobileNetClassifier.jsx
+import React, { useState, useRef, useEffect } from 'react';
+import * as mobilenet from '@tensorflow-models/mobilenet';
 
-  <h1>MobileNet: 1000-Class Image Classifier</h1>
-  <p>Pre-trained on **ImageNet**. No training needed!</p>
+export default function MobileNetClassifier() {
+  const [model, setModel] = useState(null);
+  const [result, setResult] = useState('');
+  const [liveResult, setLiveResult] = useState('');
+  const [preview, setPreview] = useState('');
+  const [isWebcamActive, setIsWebcamActive] = useState(false);
+  const fileInputRef = useRef(null);
+  const webcamRef = useRef(null);
+  const webcamIntervalRef = useRef(null);
+  const modelRef = useRef(null); // Use ref for immediate access
 
-  <div class="card">
-    <h3>Upload Image</h3>
-    <input type="file" id="imageUpload" accept="image/*" />
-    <img id="preview" />
-    <button onclick="classify()">Classify with MobileNet</button>
-    <div id="result" class="result"></div>
-  </div>
+  // Load MobileNet
+  const loadModel = async () => {
+    if (modelRef.current) return;
+    setResult('Loading MobileNet...');
+    try {
+      const loadedModel = await mobilenet.load();
+      modelRef.current = loadedModel; // Store in ref immediately
+      setModel(loadedModel);
+      setResult('Model loaded!');
+    } catch (error) {
+      setResult(`Error loading model: ${error.message}`);
+    }
+  };
 
-  <div class="card">
-    <h3>Live Webcam</h3>
-    <video id="webcam" autoplay playsinline width="640" height="480"></video>
-    <button onclick="startWebcam()">Start Webcam</button>
-    <button onclick="stopWebcam()">Stop</button>
-    <div id="liveResult"></div>
-  </div>
-
-  <script>
-    let model;
-    let webcamInterval;
-
-    // Load MobileNet
-    async function loadModel() {
-      if (model) return;
-      document.getElementById('result').innerHTML = 'Loading MobileNet...';
-      model = await mobilenet.load();
-      document.getElementById('result').innerHTML = '<span style="color:green">Model loaded!</span>';
+  // Classify uploaded image
+  const handleClassify = async () => {
+    await loadModel();
+    const currentModel = modelRef.current;
+    if (!currentModel) {
+      alert("Model not loaded!");
+      return;
     }
 
-    // Classify uploaded image
-    async function classify() {
-      await loadModel();
-      const file = document.getElementById('imageUpload').files[0];
-      if (!file) return alert("Upload an image!");
+    const file = fileInputRef.current?.files[0];
+    if (!file) {
+      alert("Upload an image!");
+      return;
+    }
 
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      await img.decode();
-      document.getElementById('preview').src = img.src;
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    await img.decode();
+    setPreview(img.src);
 
-      const predictions = await model.classify(img);
+    try {
+      const predictions = await currentModel.classify(img);
       const top3 = predictions.slice(0, 3);
 
-      document.getElementById('result').innerHTML = `
-        <div class="top3">
-          <strong>Top 3 Predictions:</strong><br>
-          ${top3.map(p => `• <strong>${p.className}</strong> (${(p.probability*100).toFixed(1)}%)`).join('<br>')}
-        </div>
-      `;
+      setResult(
+        `Top 3 Predictions:\n` +
+        top3.map(p => `• ${p.className} (${(p.probability*100).toFixed(1)}%)`).join('\n')
+      );
+    } catch (error) {
+      setResult(`Error: ${error.message}`);
+    }
+  };
+
+  // Webcam
+  const startWebcam = async () => {
+    await loadModel();
+    const currentModel = modelRef.current;
+    if (!currentModel) {
+      alert("Model not loaded!");
+      return;
     }
 
-    // Webcam
-    async function startWebcam() {
-      await loadModel();
-      const video = document.getElementById('webcam');
+    const video = webcamRef.current;
+    if (!video) return;
+
+    try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
+      setIsWebcamActive(true);
 
-      webcamInterval = setInterval(async () => {
-        if (video.readyState === 4) {
-          const preds = await model.classify(video);
-          const top = preds[0];
-          document.getElementById('liveResult').innerHTML = `
-            <strong>Live:</strong> ${top.className} (${(top.probability*100).toFixed(1)}%)
-          `;
+      webcamIntervalRef.current = setInterval(async () => {
+        if (video.readyState === 4 && modelRef.current) {
+          try {
+            const preds = await modelRef.current.classify(video);
+            const top = preds[0];
+            setLiveResult(`${top.className} (${(top.probability*100).toFixed(1)}%)`);
+          } catch (error) {
+            console.error('Classification error:', error);
+          }
         }
       }, 1000);
+    } catch (err) {
+      alert('Error accessing webcam: ' + err.message);
     }
+  };
 
-    function stopWebcam() {
-      clearInterval(webcamInterval);
-      const video = document.getElementById('webcam');
-      if (video.srcObject) {
-        video.srcObject.getTracks().forEach(t => t.stop());
-      }
-      document.getElementById('liveResult').innerHTML = '';
+  const stopWebcam = () => {
+    if (webcamIntervalRef.current) {
+      clearInterval(webcamIntervalRef.current);
+      webcamIntervalRef.current = null;
     }
+    const video = webcamRef.current;
+    if (video?.srcObject) {
+      video.srcObject.getTracks().forEach(t => t.stop());
+    }
+    setIsWebcamActive(false);
+    setLiveResult('');
+  };
 
-    // Preview
-    document.getElementById('imageUpload').addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        document.getElementById('preview').src = URL.createObjectURL(file);
-      }
-    });
-  </script>
+  // Preview
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setPreview(URL.createObjectURL(file));
+    }
+  };
 
-</body>
-</html>
+  useEffect(() => {
+    return () => {
+      stopWebcam();
+      // Note: MobileNet models don't need dispose() - they're pre-trained and managed by the library
+    };
+  }, []);
+
+  const cardStyle = {
+    border: '1px solid #ddd',
+    padding: '20px',
+    borderRadius: '12px',
+    margin: '20px 0'
+  };
+
+  return (
+    <div style={{ fontFamily: 'Arial', padding: '20px', maxWidth: '900px', margin: 'auto' }}>
+      <h1>MobileNet: 1000-Class Image Classifier</h1>
+      <p>Pre-trained on <strong>ImageNet</strong>. No training needed!</p>
+
+      <div style={cardStyle}>
+        <h3>Upload Image</h3>
+        <input 
+          ref={fileInputRef}
+          type="file" 
+          accept="image/*"
+          onChange={handleFileChange}
+          style={{ margin: '10px 0' }}
+        />
+        {preview && (
+          <img 
+            src={preview} 
+            alt="Preview"
+            style={{ maxWidth: '100%', borderRadius: '8px', margin: '10px 0' }}
+          />
+        )}
+        <button 
+          onClick={handleClassify}
+          style={{ padding: '12px 20px', fontSize: '16px', margin: '5px' }}
+        >
+          Classify with MobileNet
+        </button>
+        <div style={{ marginTop: '15px', fontSize: '18px', whiteSpace: 'pre-line', background: '#f0f8ff', padding: '10px', borderRadius: '8px' }}>
+          {result}
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <h3>Live Webcam</h3>
+        <video 
+          ref={webcamRef}
+          autoPlay
+          playsInline
+          width={640}
+          height={480}
+          style={{ display: isWebcamActive ? 'block' : 'none' }}
+        />
+        <button 
+          onClick={startWebcam}
+          style={{ padding: '12px 20px', fontSize: '16px', margin: '5px' }}
+        >
+          Start Webcam
+        </button>
+        <button 
+          onClick={stopWebcam}
+          style={{ padding: '12px 20px', fontSize: '16px', margin: '5px' }}
+        >
+          Stop
+        </button>
+        <div style={{ marginTop: '15px', fontSize: '18px' }}>
+          {liveResult && <strong>Live: {liveResult}</strong>}
+        </div>
+      </div>
+    </div>
+  );
+}
 ```
 
-### Save as `module8-mobilenet.html` → Open in Chrome
+### Save as `MobileNetClassifier.jsx` in your React project
+
+**Install dependencies:**
+```bash
+npm install @tensorflow-models/mobilenet
+```
 
 ---
 
@@ -205,21 +293,28 @@ await transferModel.fitDataset(yourDataset, { epochs: 5 });
 
 ## 8.5 Live Pose Detection with **BlazePose**
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazepose"></script>
+```jsx
+import * as poseDetection from '@tensorflow-models/pose-detection';
 
-<script>
-  let detector;
-  async function startPose() {
-    detector = await poseDetection.createDetector(poseDetection.SupportedModels.BlazePose);
-    const video = document.getElementById('webcam');
-    setInterval(async () => {
-      const poses = await detector.estimatePoses(video);
+// In your React component
+const [detector, setDetector] = useState(null);
+const webcamRef = useRef(null);
+
+const startPose = async () => {
+  const newDetector = await poseDetection.createDetector(
+    poseDetection.SupportedModels.BlazePose
+  );
+  setDetector(newDetector);
+  
+  const interval = setInterval(async () => {
+    if (webcamRef.current && newDetector) {
+      const poses = await newDetector.estimatePoses(webcamRef.current);
       drawKeypoints(poses[0]?.keypoints);
-    }, 100);
-  }
-</script>
+    }
+  }, 100);
+  
+  return () => clearInterval(interval);
+};
 ```
 
 > **Try it**: Real-time skeleton tracking!
@@ -228,15 +323,24 @@ await transferModel.fitDataset(yourDataset, { epochs: 5 });
 
 ## 8.6 Text Models: Toxicity & Sentiment
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/toxicity"></script>
+```jsx
+import * as toxicity from '@tensorflow-models/toxicity';
 
-<script>
-  const toxicity = await toxicity.load();
-  const sentences = ['I hate you'];
-  const predictions = await toxicity.classify(sentences);
-  console.log(predictions);
-</script>
+// In your React component
+const [toxicityModel, setToxicityModel] = useState(null);
+
+useEffect(() => {
+  const loadModel = async () => {
+    const model = await toxicity.load();
+    setToxicityModel(model);
+  };
+  loadModel();
+}, []);
+
+// Use it
+const sentences = ['I hate you'];
+const predictions = await toxicityModel?.classify(sentences);
+console.log(predictions);
 ```
 
 ---
@@ -323,10 +427,3 @@ app.post('/classify', async (req, res) => {
 
 ---
 
-**You’re an AI engineer now!**  
-You **download**, **adapt**, and **deploy** world-class models.
-
-> **Save as `MODULE-8.md`**  
-> Next: **Module 9** — Deployment, optimization, and shipping!
-
----

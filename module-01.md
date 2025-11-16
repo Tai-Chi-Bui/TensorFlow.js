@@ -110,70 +110,87 @@ Let’s **simulate** what ML does — **without TensorFlow.js yet**.
 
 ### Goal: Predict house price from size (like real ML, but you write the rule)
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>My First ML Demo</title>
-  <style>
-    body { font-family: Arial; padding: 20px; }
-    input, button { padding: 10px; font-size: 16px; margin: 5px; }
-    #result { margin-top: 20px; font-weight: bold; color: green; }
-  </style>
-</head>
-<body>
+```jsx
+// FakeML.jsx
+import React, { useState } from 'react';
 
-  <h1>🏠 House Price Predictor (Fake ML)</h1>
-  <p>Enter house size in square feet:</p>
-  <input type="number" id="size" placeholder="e.g. 1200" />
-  <button onclick="predict()">Predict Price</button>
-  <div id="result"></div>
+// Step 1: "Training Data" (Examples the model would learn from)
+const trainingData = [
+  { size: 800,  price: 95000 },
+  { size: 1000, price: 125000 },
+  { size: 1200, price: 145000 },
+  { size: 1500, price: 180000 },
+  { size: 2000, price: 240000 }
+];
 
-  <script>
-    // Step 1: "Training Data" (Examples the model would learn from)
-    const trainingData = [
-      { size: 800,  price: 95000 },
-      { size: 1000, price: 125000 },
-      { size: 1200, price: 145000 },
-      { size: 1500, price: 180000 },
-      { size: 2000, price: 240000 }
-    ];
+// Step 2: "Fake Model" — We write the rule (in real ML, computer learns this)
+function fakeMLModel(size) {
+  // This is what the REAL model would learn:
+  // price ≈ size × 120 + 5000
+  return size * 120 + 5000;
+}
 
-    // Step 2: "Fake Model" — We write the rule (in real ML, computer learns this)
-    function fakeMLModel(size) {
-      // This is what the REAL model would learn:
-      // price ≈ size × 120 + 5000
-      return size * 120 + 5000;
+export default function FakeML() {
+  const [size, setSize] = useState('');
+  const [result, setResult] = useState(null);
+
+  // Step 3: Predict function
+  const handlePredict = () => {
+    const sizeValue = parseFloat(size);
+
+    if (isNaN(sizeValue) || sizeValue <= 0) {
+      setResult({ error: "⚠️ Please enter a valid size!" });
+      return;
     }
 
-    // Step 3: Predict function
-    function predict() {
-      const input = document.getElementById('size');
-      const size = parseFloat(input.value);
+    const predictedPrice = fakeMLModel(sizeValue);
+    setResult({ 
+      price: predictedPrice,
+      size: sizeValue 
+    });
+  };
 
-      if (isNaN(size) || size <= 0) {
-        document.getElementById('result').innerHTML = "⚠️ Please enter a valid size!";
-        return;
-      }
+  // Bonus: Show training data
+  console.log("Training Examples:", trainingData);
 
-      const predictedPrice = fakeMLModel(size);
-      document.getElementById('result').innerHTML = `
-        <strong>Predicted Price: $${predictedPrice.toLocaleString()}</strong><br>
-        <small>Based on learned pattern: price ≈ size × 120 + 5000</small>
-      `;
-    }
-
-    // Bonus: Show training data
-    console.log("Training Examples:", trainingData);
-  </script>
-
-</body>
-</html>
+  return (
+    <div style={{ fontFamily: 'Arial', padding: '20px' }}>
+      <h1>🏠 House Price Predictor (Fake ML)</h1>
+      <p>Enter house size in square feet:</p>
+      <input 
+        type="number" 
+        value={size}
+        onChange={(e) => setSize(e.target.value)}
+        placeholder="e.g. 1200"
+        style={{ padding: '10px', fontSize: '16px', margin: '5px' }}
+      />
+      <button 
+        onClick={handlePredict}
+        style={{ padding: '10px', fontSize: '16px', margin: '5px' }}
+      >
+        Predict Price
+      </button>
+      {result && (
+        <div style={{ marginTop: '20px', fontWeight: 'bold', color: result.error ? 'red' : 'green' }}>
+          {result.error ? (
+            <div>{result.error}</div>
+          ) : (
+            <>
+              <strong>Predicted Price: ${result.price.toLocaleString()}</strong>
+              <br />
+              <small>Based on learned pattern: price ≈ size × 120 + 5000</small>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 ```
 
 ### Try It!
-1. Save as `fake-ml.html`
-2. Open in Chrome
+1. Save as `FakeML.jsx` in your React project
+2. Import and use: `<FakeML />`
 3. Enter `1300` → Should predict **~$161,000**
 
 ---
@@ -239,12 +256,19 @@ Input Layer → Hidden Layer → Output Layer
 
 ## 1.6 Setup: Tools & Environment
 
-### Option 1: Browser (Easiest)
+### Option 1: React Project (Recommended)
 
-Just open HTML files! No install needed.
+Create a new React app and install TensorFlow.js:
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+```bash
+npx create-react-app tfjs-app
+cd tfjs-app
+npm install @tensorflow/tfjs
+```
+
+Then import in your components:
+```jsx
+import * as tf from '@tensorflow/tfjs';
 ```
 
 ### Option 2: Node.js (For APIs, CLI)
@@ -323,14 +347,5 @@ node hello.js
 | Video (10 min) | [YouTube: "What is TensorFlow.js?"](https://www.youtube.com/watch?v=5bZ6i3k7f4w) |
 | Interactive Demo | [ml-playground.com](https://ml-playground.com) |
 | Book (Free Chapter) | [Learning TensorFlow.js - Chapter 1](https://www.oreilly.com/library/view/learning-tensorflowjs/9781492099966/) |
-
----
-
-**You did it!**  
-You now understand **what ML is**, **why TensorFlow.js rocks**, and even **wrote your first prediction code**.
-
-> **Save this file as `MODULE-1.md`**  
-> Keep it as your reference.  
-> See you in **Module 2** — where the **real magic** begins! 🚀
 
 ---

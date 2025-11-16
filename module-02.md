@@ -41,13 +41,18 @@ Teach a model to learn:
 
 ## 2.2 Install TensorFlow.js (2 Ways)
 
-### Option 1: Browser (Easiest)
+### Option 1: React Project (Recommended)
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+```bash
+npx create-react-app tfjs-app
+cd tfjs-app
+npm install @tensorflow/tfjs
 ```
 
-> Just add this line to any HTML file.
+Then import in your components:
+```jsx
+import * as tf from '@tensorflow/tfjs';
+```
 
 ---
 
@@ -76,13 +81,13 @@ npm install @tensorflow/tfjs-node
 
 ### Try in Browser Console
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-<script>
-  const t = tf.tensor2d([[1, 2], [3, 4]]);
-  t.print(); // [[1, 2], [3, 4]]
-  console.log(t.shape); // [2, 2]
-</script>
+```jsx
+import * as tf from '@tensorflow/tfjs';
+
+// In your React component or console
+const t = tf.tensor2d([[1, 2], [3, 4]]);
+t.print(); // [[1, 2], [3, 4]]
+console.log(t.shape); // [2, 2]
 ```
 
 **Why 2D?**  
@@ -98,169 +103,224 @@ ys = [[1], [3], [5]]  // Output (2*1-1=1, 2*2-1=3, etc.)
 
 ### Full Working HTML File
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Module 2: My First Real Model</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body { font-family: Arial; padding: 20px; max-width: 800px; margin: auto; }
-    button, input { padding: 10px; font-size: 16px; margin: 5px; }
-    #output, #chartContainer { margin: 20px 0; }
-    canvas { border: 1px solid #ddd; border-radius: 8px; }
-    .code { background: #f4f4f4; padding: 15px; border-radius: 8px; font-family: monospace; }
-  </style>
-</head>
-<body>
+```jsx
+// FirstModel.jsx
+import React, { useState, useRef, useEffect } from 'react';
+import * as tf from '@tensorflow/tfjs';
+import { Chart, registerables } from 'chart.js';
 
-  <h1>🧠 My First ML Model: Learn y = 2x − 1</h1>
-  <p><strong>Goal</strong>: Train a model to predict output from input.</p>
+Chart.register(...registerables);
 
-  <div class="code">
-    <strong>Training Data (Examples):</strong><br>
-    x = [1, 2, 3, 4] → y = [1, 3, 5, 7] <br>
-    <small>Because: 2×1−1=1, 2×2−1=3, etc.</small>
-  </div>
+export default function FirstModel() {
+  const [model, setModel] = useState(null);
+  const [lossValues, setLossValues] = useState([]);
+  const [output, setOutput] = useState('Click "Train Model" to start learning!');
+  const [testX, setTestX] = useState('');
+  const [isTraining, setIsTraining] = useState(false);
+  const chartRef = useRef(null);
+  const chartInstanceRef = useRef(null);
+  const modelRef = useRef(null); // Use ref for immediate access
 
-  <button onclick="trainModel()">Train Model (250 steps)</button>
-  <button onclick="predict()">Test Prediction</button>
-  <input type="number" id="testX" placeholder="Enter x (e.g. 5)" />
-  <div id="output"></div>
+  // Step 1: Create the model
+  const createModel = () => {
+    const newModel = tf.sequential();
+    
+    // One dense layer: 1 input → 1 output
+    newModel.add(tf.layers.dense({
+      units: 1,           // 1 neuron
+      inputShape: [1]     // 1 input value (x)
+    }));
 
-  <h2>Training Progress (Loss)</h2>
-  <div id="chartContainer"><canvas id="lossChart"></canvas></div>
+    // Optimizer + Loss
+    newModel.compile({
+      optimizer: 'sgd',   // Stochastic Gradient Descent
+      loss: 'meanSquaredError'
+    });
 
-  <script>
-    let model;
-    let lossValues = [];
+    modelRef.current = newModel; // Store in ref immediately
+    setModel(newModel);
+    setOutput('Model created! Click "Train Model"');
+    return newModel;
+  };
 
-    // Step 1: Create the model
-    async function createModel() {
-      model = tf.sequential();
-      
-      // One dense layer: 1 input → 1 output
-      model.add(tf.layers.dense({
-        units: 1,           // 1 neuron
-        inputShape: [1]     // 1 input value (x)
-      }));
-
-      // Optimizer + Loss
-      model.compile({
-        optimizer: 'sgd',   // Stochastic Gradient Descent
-        loss: 'meanSquaredError'
-      });
-
-      document.getElementById('output').innerHTML = 
-        '<span style="color:green">Model created! Click "Train Model"</span>';
+  // Step 2: Train the model
+  const trainModel = async () => {
+    // Get or create model
+    let currentModel = modelRef.current;
+    if (!currentModel) {
+      currentModel = createModel();
     }
+    
+    setIsTraining(true);
+    setOutput('Training...');
 
-    // Step 2: Train the model
-    async function trainModel() {
-      await createModel();
-      document.getElementById('output').innerHTML = 'Training...';
+    // Training data
+    const xs = tf.tensor2d([[1], [2], [3], [4]], [4, 1]);
+    const ys = tf.tensor2d([[1], [3], [5], [7]], [4, 1]);
 
-      // Training data
-      const xs = tf.tensor2d([[1], [2], [3], [4]], [4, 1]);
-      const ys = tf.tensor2d([[1], [3], [5], [7]], [4, 1]);
+    const newLossValues = [];
 
-      lossValues = [];
-
+    try {
       // Train for 250 epochs
       for (let i = 0; i < 250; i++) {
-        const response = await model.fit(xs, ys, { epochs: 1 });
+        const response = await currentModel.fit(xs, ys, { epochs: 1 });
         const loss = response.history.loss[0];
-        lossValues.push({ x: i + 1, y: loss });
+        newLossValues.push({ x: i + 1, y: loss });
 
         // Update UI every 25 steps
         if ((i + 1) % 25 === 0) {
-          document.getElementById('output').innerHTML = 
-            `Training... Epoch ${i + 1}/250<br>Loss: ${loss.toFixed(6)}`;
-          updateChart();
+          setOutput(`Training... Epoch ${i + 1}/250\nLoss: ${loss.toFixed(6)}`);
+          setLossValues([...newLossValues]);
+          updateChart([...newLossValues]);
         }
       }
 
-      document.getElementById('output').innerHTML = 
-        '<span style="color:green">Training Complete! Try prediction.</span>';
-      updateChart();
+      setOutput('Training Complete! Try prediction.');
+      setLossValues(newLossValues);
+      updateChart(newLossValues);
+    } catch (error) {
+      setOutput(`Error during training: ${error.message}`);
+    } finally {
+      xs.dispose();
+      ys.dispose();
+      setIsTraining(false);
+    }
+  };
+
+  // Step 3: Predict
+  const handlePredict = () => {
+    const currentModel = modelRef.current;
+    if (!currentModel) {
+      setOutput('Train the model first!');
+      return;
     }
 
-    // Step 3: Predict
-    function predict() {
-      if (!model) {
-        alert("Train the model first!");
-        return;
-      }
+    const x = parseFloat(testX);
 
-      const input = document.getElementById('testX');
-      const x = parseFloat(input.value);
+    if (isNaN(x)) {
+      setOutput('Enter a number!');
+      return;
+    }
 
-      if (isNaN(x)) {
-        alert("Enter a number!");
-        return;
-      }
-
+    tf.tidy(() => {
       const inputTensor = tf.tensor2d([x], [1, 1]);
-      const prediction = model.predict(inputTensor);
+      const prediction = currentModel.predict(inputTensor);
       const result = prediction.dataSync()[0];
 
       const correct = 2 * x - 1;
-      document.getElementById('output').innerHTML = `
-        <strong>Input x = ${x}</strong><br>
-        Model predicts: <strong>${result.toFixed(4)}</strong><br>
-        Correct answer: <strong>${correct}</strong><br>
-        Error: ${Math.abs(result - correct).toFixed(4)}
-      `;
+      setOutput(
+        `Input x = ${x}\n` +
+        `Model predicts: ${result.toFixed(4)}\n` +
+        `Correct answer: ${correct}\n` +
+        `Error: ${Math.abs(result - correct).toFixed(4)}`
+      );
+    });
+  };
 
-      inputTensor.dispose();
-      prediction.dispose();
+  // Step 4: Visualize loss
+  const updateChart = (data = lossValues) => {
+    if (!chartRef.current) return;
+
+    const ctx = chartRef.current.getContext('2d');
+    const chartData = data.map(p => p.y);
+    const labels = data.map(p => p.x);
+
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.destroy();
     }
 
-    // Step 4: Visualize loss
-    let chart;
-    function updateChart() {
-      const ctx = document.getElementById('lossChart').getContext('2d');
-      const data = lossValues.map(p => p.y);
-      const labels = lossValues.map(p => p.x);
-
-      if (chart) chart.destroy();
-
-      chart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Training Loss',
-            data: data,
-            borderColor: 'rgb(75, 192, 192)',
-            backgroundColor: 'rgba(75, 192, 192, 0.1)',
-            fill: true,
-            tension: 0.4
-          }]
-        },
-        options: {
-          responsive: true,
-          scales: {
-            y: { beginAtZero: true, title: { display: true, text: 'Loss' } },
-            x: { title: { display: true, text: 'Epoch' } }
-          }
+    chartInstanceRef.current = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Training Loss',
+          data: chartData,
+          borderColor: 'rgb(75, 192, 192)',
+          backgroundColor: 'rgba(75, 192, 192, 0.1)',
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { beginAtZero: true, title: { display: true, text: 'Loss' } },
+          x: { title: { display: true, text: 'Epoch' } }
         }
-      });
-    }
+      }
+    });
+  };
 
-    // Auto-create model on load
-    window.onload = () => {
-      document.getElementById('output').innerHTML = 
-        'Click "Train Model" to start learning!';
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
+      if (modelRef.current) {
+        modelRef.current.dispose();
+        modelRef.current = null;
+      }
     };
-  </script>
+  }, []);
 
-</body>
-</html>
+  return (
+    <div style={{ fontFamily: 'Arial', padding: '20px', maxWidth: '800px', margin: 'auto' }}>
+      <h1>🧠 My First ML Model: Learn y = 2x − 1</h1>
+      <p><strong>Goal</strong>: Train a model to predict output from input.</p>
+
+      <div style={{ 
+        background: '#f4f4f4', 
+        padding: '15px', 
+        borderRadius: '8px', 
+        fontFamily: 'monospace' 
+      }}>
+        <strong>Training Data (Examples):</strong><br />
+        x = [1, 2, 3, 4] → y = [1, 3, 5, 7] <br />
+        <small>Because: 2×1−1=1, 2×2−1=3, etc.</small>
+      </div>
+
+      <button 
+        onClick={trainModel}
+        disabled={isTraining}
+        style={{ padding: '10px', fontSize: '16px', margin: '5px' }}
+      >
+        {isTraining ? 'Training...' : 'Train Model (250 steps)'}
+      </button>
+      <button 
+        onClick={handlePredict}
+        style={{ padding: '10px', fontSize: '16px', margin: '5px' }}
+      >
+        Test Prediction
+      </button>
+      <input 
+        type="number" 
+        value={testX}
+        onChange={(e) => setTestX(e.target.value)}
+        placeholder="Enter x (e.g. 5)"
+        style={{ padding: '10px', fontSize: '16px', margin: '5px' }}
+      />
+      <div style={{ margin: '20px 0', whiteSpace: 'pre-line' }}>{output}</div>
+
+      <h2>Training Progress (Loss)</h2>
+      <div style={{ margin: '20px 0' }}>
+        <canvas 
+          ref={chartRef}
+          style={{ border: '1px solid #ddd', borderRadius: '8px' }}
+        />
+      </div>
+    </div>
+  );
+}
 ```
 
-### Save as `module2-real-model.html` → Open in Chrome
+### Save as `FirstModel.jsx` in your React project
+
+**Install dependencies:**
+```bash
+npm install @tensorflow/tfjs chart.js
+```
 
 ---
 
@@ -384,11 +444,3 @@ const ys = tf.tensor2d([[32], [50], [68], [86]], [4, 1]);
 
 ---
 
-**You did it!**  
-You just trained a **real neural network** in JavaScript.  
-No Python. No math. Just **code**.
-
-> **Save this as `MODULE-2.md`**  
-> Next: **Module 3** — Tensors, data, and real-world datasets!
-
----
